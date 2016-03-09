@@ -888,10 +888,10 @@ add_object_instance (
 	for (i=0; i<MAX_ITEMS_FOR_UID; i++) {
 	    node->uid[i] = uid[i];
 	}
-  instance_key *key;
-  key->token=instance->token;
-  key->handle=instance->handle;
-  PL_HashTableAdd(collection->PKIinstancehashtable,key,&node->object);
+  instance_key key;
+  key.token=instance->token;
+  key.handle=instance->handle;
+  PL_HashTableAdd(collection->PKIinstancehashtable,&key,&node->object);
 	node->haveObject = PR_FALSE;
 	
 
