@@ -1072,8 +1072,8 @@ nssPKIObjectCollection_GetObjects (
 PRIntn collection_traverse_callback(PLHashEntry *he,PRIntn index,void *arg)
 {
   const collectionTraverse *ctraverse = arg;
-  nssPKIObjectCollection *collection = (nssPKIObjectCollection *)&ctraverse->collection;
-  nssPKIObjectCallback *callback = (nssPKIObjectCallback *)&ctraverse->callback;
+  nssPKIObjectCollection *collection = (nssPKIObjectCollection *)ctraverse->collection;
+  nssPKIObjectCallback *callback = (nssPKIObjectCallback *)ctraverse->callback;
   if (!((pkiObjectCollectionNode *)(he->value))->haveObject) {
       ((pkiObjectCollectionNode *)he->value)->object = (*collection->createObject)(((pkiObjectCollectionNode *)he->value)->object);
       if (!((pkiObjectCollectionNode *)he->value)->object) {
