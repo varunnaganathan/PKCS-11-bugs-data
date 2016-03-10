@@ -64,14 +64,17 @@ hash_func1(const void  *arg)
   {
     hashvalue =  hashvalue ^ uid[i].size;
   }
+  printf("hash_func1 calc %x\n", hashvalue);
   return hashvalue; 
 }
 
 PR_IMPLEMENT(PLHashNumber)
 hash_func2(const void  *arg)
 {
-  const instance_key *key = arg;
-  return (PLHashNumber)( (PLHashNumber)((unsigned long)key->token) ^ (PLHashNumber)((unsigned long)key->handle) );
+  const nssCryptokiObject *key = arg;
+  PLHashNumber hashvalue =  (PLHashNumber)((unsigned long)key->token) ^ (PLHashNumber)((unsigned long)key->handle);
+  printf("hash_func2 calc %x\n", hashvalue);
+  return hashvalue;
 }
 
 NSS_IMPLEMENT void
@@ -785,12 +788,13 @@ find_instance_in_collection (
 )
 {
     //PRCList *link;
+    printf("hello\n\n\n\n\n\n");
     pkiObjectCollectionNode *node;
     
-    instance_key key;
-    key.token = instance->token;
-    key.handle = instance->handle;
-    node =  PL_HashTableLookup(collection->PKIinstancehashtable,&key);
+    //instance_key key;
+    //key.token = instance->token;
+    //key.handle = instance->handle;
+    node =  PL_HashTableLookup(collection->PKIinstancehashtable,instance);
     if (node && nssPKIObject_HasInstance(node->object, instance))
       return node;
     return (pkiObjectCollectionNode *)NULL;
@@ -813,6 +817,7 @@ find_object_in_collection (
   NSSItem *uid
 )
 {
+  printf("hello\n\n\n\n\n\n");
   return PL_HashTableLookup(collection->PKIobjecthashtable,uid);
   /* PRUint32 i;
     PRStatus status;
@@ -908,11 +913,13 @@ add_object_instance (
 	for (i=0; i<MAX_ITEMS_FOR_UID; i++) {
 	    node->uid[i] = uid[i];
 	}
-  instance_key key;
-  key.token=instance->token;
-  key.handle=instance->handle;
-  PL_HashTableAdd(collection->PKIinstancehashtable,&key,node);
+  //instance_key key;
+  //key.token=instance->token;
+  //key.handle=instance->handle;
+  PL_HashTableAdd(collection->PKIinstancehashtable,instance,node);
 	node->haveObject = PR_FALSE;
+  PL_HashTableAdd(collection->PKIobjecthashtable,&node->uid,node);
+  printf("Add node %p object %p\n", node, node->object);
 	
 
 
@@ -976,13 +983,37 @@ nssPKIObjectCollection_RemoveNode (
     collection->size--;
 }
 
-//ADDED EXTRA
-PRIntn get_objects_callback(PLHashEntry *he, PRIntn index,void *arg)
+struct get_obj_args
 {
-  const nssPKIObject **rv = arg;
+ nssPKIObjectCollection *collection;
+ nssPKIObject **rvObjects;
+ PRUint32 rvSize;
+ PRUint32 nr_objs;
+ int error;
+};
+//ADDED EXTRA
+PRIntn get_objects_callback(PLHashEntry *he, PRIntn index,void *_args)
+{
+  //const nssPKIObject **rv = arg;
+  struct get_obj_args *args = _args;
   pkiObjectCollectionNode *node = (pkiObjectCollectionNode *)he->value;
-  rv[index] = nssPKIObject_AddRef(node->object);
-  return HT_ENUMERATE_NEXT;
+  //rv[index] = nssPKIObject_AddRef(node->object);
+  //return HT_ENUMERATE_NEXT;
+  printf("%s idx %d node %p object %p\n", __func__, index, node, node->object);
+  if (!node->haveObject) {
+   //Convert the proto-object to an object
+   node->object = args->collection->createObject(node->object);
+   if (!node->object) {
+     args->error = 1;
+     return HT_ENUMERATE_REMOVE;
+   }
+   node->haveObject = PR_TRUE;
+  }
+  args->rvObjects[args->nr_objs++] = nssPKIObject_AddRef(node->object);
+  if (args->nr_objs < args->rvSize)
+   return HT_ENUMERATE_NEXT;
+  else
+   return HT_ENUMERATE_STOP;
 }
 
 static PRStatus
@@ -995,8 +1026,17 @@ nssPKIObjectCollection_GetObjects (
     //PRUint32 i = 0;
    // PRCList *link = PR_NEXT_LINK(&collection->head);
    // pkiObjectCollectionNode *node;
-    int error=0;
-    int numentries = PL_HashTableEnumerateEntries(collection->PKIobjecthashtable,get_objects_callback,rvObjects);
+    //int error=0;
+    //int numentries = PL_HashTableEnumerateEntries(collection->PKIobjecthashtable,get_objects_callback,rvObjects);
+    struct get_obj_args args;
+    int numentries;
+
+    args.collection = collection;
+    args.rvObjects = rvObjects;
+    args.rvSize = rvSize;
+    args.error = args.nr_objs = 0;
+
+    numentries = PL_HashTableEnumerateEntries(collection->PKIobjecthashtable,get_objects_callback,&args);
     if (numentries == 0)
       return PR_SUCCESS;
     
@@ -1022,7 +1062,7 @@ nssPKIObjectCollection_GetObjects (
 
 
 
-    if (!error && *rvObjects == NULL) {
+    if (!args.error && *rvObjects == NULL) {
 	nss_SetError(NSS_ERROR_NOT_FOUND);
     }
     return PR_SUCCESS;
