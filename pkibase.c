@@ -25,10 +25,9 @@ typedef struct collectionTraverse
 }collectionTraverse;
 
 /* Function to compare the keys of the object hash table */
-PRBool
-CompareKeys_objects(const void *v1, const void *v2)
+static PRBool
+compare_objects(const void *v1, const void *v2)
 {
-    //return (*(int *)v1 < *(int *)v2) ? -1 : (*(int *)v1 > *(int *)v2);
     const NSSItem *uid_one = v1;
     const NSSItem *uid_two = v2;
     int i = 0;
@@ -42,8 +41,8 @@ CompareKeys_objects(const void *v1, const void *v2)
 }
 
 /* Function to compare the keys of the instance hash table */
-PRBool
-CompareKeys_instances(const void *v1, const void *v2)
+static PRBool
+compare_instances(const void *v1, const void *v2)
 {
   const nssCryptokiObject *one = v1;
   const nssCryptokiObject *two = v2;
@@ -51,8 +50,8 @@ CompareKeys_instances(const void *v1, const void *v2)
 }
 
 /* hash function for the object hash table */
-PLHashNumber
-hash_uid(const void  *arg)
+static PLHashNumber
+hash_object(const void  *arg)
 {
   const NSSItem *uid=arg;
   PLHashNumber hashvalue = uid[0].size;
@@ -65,8 +64,8 @@ hash_uid(const void  *arg)
 }
 
 /* hash function for the instance hash table */
-PLHashNumber
-hash_token_handle(const void  *arg)
+static PLHashNumber
+hash_instance(const void  *arg)
 {
   const nssCryptokiObject *key = arg;
   /* hash function can be improved */
@@ -710,8 +709,8 @@ nssPKIObjectCollection_Create (
     if (!rvCollection) {
 	goto loser;
     }
-    rvCollection->PKIobjecthashtable = PL_NewHashTable(0,hash_uid,CompareKeys_objects,PL_CompareValues,NULL,NULL);
-    rvCollection->PKIinstancehashtable = PL_NewHashTable(0,hash_token_handle,CompareKeys_instances,PL_CompareValues,NULL,NULL);
+    rvCollection->PKIobjecthashtable = PL_NewHashTable(0,hash_object,compare_objects,PL_CompareValues,NULL,NULL);
+    rvCollection->PKIinstancehashtable = PL_NewHashTable(0,hash_instance,compare_instances,PL_CompareValues,NULL,NULL);
     rvCollection->arena = arena;
     rvCollection->td = td; /* XXX */
     rvCollection->cc = ccOpt;
@@ -765,28 +764,6 @@ nssPKIObjectCollection_AddObject (
 }
 
 static pkiObjectCollectionNode *
-find_instance_in_collection (
-  nssPKIObjectCollection *collection,
-  nssCryptokiObject *instance
-)
-{
-    pkiObjectCollectionNode *node;
-    node =  PL_HashTableLookup(collection->PKIinstancehashtable,instance);
-    if (node && nssPKIObject_HasInstance(node->object, instance))
-      return node;
-    return (pkiObjectCollectionNode *)NULL;
-}
-
-static pkiObjectCollectionNode *
-find_object_in_collection (
-  nssPKIObjectCollection *collection,
-  NSSItem *uid
-)
-{
-  return PL_HashTableLookup(collection->PKIobjecthashtable,uid);
-}
-
-static pkiObjectCollectionNode *
 add_object_instance (
   nssPKIObjectCollection *collection,
   nssCryptokiObject *instance,
@@ -805,7 +782,7 @@ add_object_instance (
      * instance is already in the collection, and we have nothing to do.
      */
     *foundIt = PR_FALSE;
-    node = find_instance_in_collection(collection, instance);
+    node = PL_HashTableLookup(collection->PKIinstancehashtable,instance);
     if (node) {
 	/* The collection is assumed to take over the instance.  Since we
 	 * are not using it, it must be destroyed.
@@ -827,7 +804,7 @@ add_object_instance (
      * in the collection, but does not have this instance, so the instance 
      * needs to be added.
      */
-    node = find_object_in_collection(collection, uid);
+    node = PL_HashTableLookup(collection->PKIobjecthashtable, uid);
     if (node) {
 	/* This is an object with multiple instances */
 	status = nssPKIObject_AddInstance(node->object, instance);
@@ -846,12 +823,12 @@ add_object_instance (
 	for (i=0; i<MAX_ITEMS_FOR_UID; i++) {
 	    node->uid[i] = uid[i];
 	}
-  PL_HashTableAdd(collection->PKIinstancehashtable,instance,node);
 	node->haveObject = PR_FALSE;
-  PL_HashTableAdd(collection->PKIobjecthashtable,&node->uid,node);
+  PL_HashTableAdd(collection->PKIobjecthashtable, &node->uid, node);
   collection->size++;
 	status = PR_SUCCESS;
     }
+    PL_HashTableAdd(collection->PKIinstancehashtable, instance, node);
     nssArena_Unmark(collection->arena, mark);
     return node;
 loser:
@@ -935,7 +912,6 @@ nssPKIObjectCollection_GetObjects (
     args.rvObjects = rvObjects;
     args.rvSize = rvSize;
     args.error = args.nr_objs = 0;
-
     numentries = PL_HashTableEnumerateEntries(collection->PKIobjecthashtable,get_objects_callback,&args);
     if (numentries == 0)
       return PR_SUCCESS;
