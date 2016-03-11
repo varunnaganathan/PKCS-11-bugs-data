@@ -25,18 +25,16 @@ typedef struct collectionTraverse
 }collectionTraverse;
 
 /* Function to compare the keys of the object hash table */
-PR_IMPLEMENT(PRBool)
-PL_CompareKeys_objects(const void *v1, const void *v2)
+PRBool
+CompareKeys_objects(const void *v1, const void *v2)
 {
     //return (*(int *)v1 < *(int *)v2) ? -1 : (*(int *)v1 > *(int *)v2);
     const NSSItem *uid_one = v1;
     const NSSItem *uid_two = v2;
     int i = 0;
     PRStatus status; 
-    for(i=0;i<MAX_ITEMS_FOR_UID;i++)
-    {
-      if(!nssItem_Equal(&uid_one[i], &uid_two[i], &status))
-      {
+    for(i=0;i<MAX_ITEMS_FOR_UID;i++) {
+      if(!nssItem_Equal(&uid_one[i], &uid_two[i], &status)) {
         return PR_FALSE;
       }
     }
@@ -44,8 +42,8 @@ PL_CompareKeys_objects(const void *v1, const void *v2)
 }
 
 /* Function to compare the keys of the instance hash table */
-PR_IMPLEMENT(PRBool)
-PL_CompareKeys_instances(const void *v1, const void *v2)
+PRBool
+CompareKeys_instances(const void *v1, const void *v2)
 {
   const nssCryptokiObject *one = v1;
   const nssCryptokiObject *two = v2;
@@ -53,29 +51,26 @@ PL_CompareKeys_instances(const void *v1, const void *v2)
 }
 
 /* hash function for the object hash table */
-PR_IMPLEMENT(PLHashNumber)
-hash_func1(const void  *arg)
+PLHashNumber
+hash_uid(const void  *arg)
 {
   const NSSItem *uid=arg;
   PLHashNumber hashvalue = uid[0].size;
   int i;
-  for (i=1;i<MAX_ITEMS_FOR_UID;i++)
-  {
+  for (i=1;i<MAX_ITEMS_FOR_UID;i++) {
     /* hash function can be improved */
     hashvalue =  hashvalue ^ uid[i].size;
   }
-  printf("hash_func1 calc %x\n", hashvalue);
   return hashvalue; 
 }
 
 /* hash function for the instance hash table */
-PR_IMPLEMENT(PLHashNumber)
-hash_func2(const void  *arg)
+PLHashNumber
+hash_token_handle(const void  *arg)
 {
   const nssCryptokiObject *key = arg;
   /* hash function can be improved */
   PLHashNumber hashvalue =  (PLHashNumber)((unsigned long)key->token) ^ (PLHashNumber)((unsigned long)key->handle);
-  printf("hash_func2 calc %x\n", hashvalue);
   return hashvalue;
 }
 
@@ -665,6 +660,16 @@ typedef struct
 } 
 pkiObjectCollectionNode;
 
+/* The struct required for the callback used for the nssPKIObjectCollection_GetObjects function */ 
+struct get_obj_args
+{
+ nssPKIObjectCollection *collection;
+ nssPKIObject **rvObjects;
+ PRUint32 rvSize;
+ PRUint32 nr_objs;
+ int error;
+};
+
 /* nssPKIObjectCollection
  *
  * The collection is the set of all objects, plus the interfaces needed
@@ -676,7 +681,6 @@ struct nssPKIObjectCollectionStr
   NSSArena *arena;
   NSSTrustDomain *td;
   NSSCryptoContext *cc;
-  PRCList head; /* list of pkiObjectCollectionNode's */
   PLHashTable *PKIobjecthashtable; /* hash table for all the distinct objects*/
   PLHashTable *PKIinstancehashtable; /* hash table for multiple instances of the same object*/
   PRUint32 size;
@@ -706,9 +710,8 @@ nssPKIObjectCollection_Create (
     if (!rvCollection) {
 	goto loser;
     }
-    PR_INIT_CLIST(&rvCollection->head);
-    rvCollection->PKIobjecthashtable = PL_NewHashTable(0,hash_func1,PL_CompareKeys_objects,PL_CompareValues,NULL,NULL);
-    rvCollection->PKIinstancehashtable = PL_NewHashTable(0,hash_func2,PL_CompareKeys_instances,PL_CompareValues,NULL,NULL);
+    rvCollection->PKIobjecthashtable = PL_NewHashTable(0,hash_uid,CompareKeys_objects,PL_CompareValues,NULL,NULL);
+    rvCollection->PKIinstancehashtable = PL_NewHashTable(0,hash_token_handle,CompareKeys_instances,PL_CompareValues,NULL,NULL);
     rvCollection->arena = arena;
     rvCollection->td = td; /* XXX */
     rvCollection->cc = ccOpt;
@@ -767,7 +770,6 @@ find_instance_in_collection (
   nssCryptokiObject *instance
 )
 {
-    printf("hello\n\n\n\n\n\n");
     pkiObjectCollectionNode *node;
     node =  PL_HashTableLookup(collection->PKIinstancehashtable,instance);
     if (node && nssPKIObject_HasInstance(node->object, instance))
@@ -781,7 +783,6 @@ find_object_in_collection (
   NSSItem *uid
 )
 {
-  printf("hello\n\n\n\n\n\n");
   return PL_HashTableLookup(collection->PKIobjecthashtable,uid);
 }
 
@@ -848,7 +849,6 @@ add_object_instance (
   PL_HashTableAdd(collection->PKIinstancehashtable,instance,node);
 	node->haveObject = PR_FALSE;
   PL_HashTableAdd(collection->PKIobjecthashtable,&node->uid,node);
-  printf("Add node %p object %p\n", node, node->object);
   collection->size++;
 	status = PR_SUCCESS;
     }
@@ -902,23 +902,10 @@ nssPKIObjectCollection_RemoveNode (
     collection->size--;
 }
 
-struct get_obj_args
-{
- nssPKIObjectCollection *collection;
- nssPKIObject **rvObjects;
- PRUint32 rvSize;
- PRUint32 nr_objs;
- int error;
-};
-//ADDED EXTRA
 PRIntn get_objects_callback(PLHashEntry *he, PRIntn index,void *_args)
 {
-  //const nssPKIObject **rv = arg;
   struct get_obj_args *args = _args;
   pkiObjectCollectionNode *node = (pkiObjectCollectionNode *)he->value;
-  //rv[index] = nssPKIObject_AddRef(node->object);
-  //return HT_ENUMERATE_NEXT;
-  printf("%s idx %d node %p object %p\n", __func__, index, node, node->object);
   if (!node->haveObject) {
    //Convert the proto-object to an object
    node->object = args->collection->createObject(node->object);
