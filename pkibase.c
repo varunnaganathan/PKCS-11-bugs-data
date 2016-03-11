@@ -938,7 +938,7 @@ if (!node->object) {
 //remove bogus object from list
 return HT_ENUMERATE_REMOVE;
 }
-((pkiObjectCollectionNode *)he->value)->haveObject = PR_TRUE;
+node->haveObject = PR_TRUE;
   }
   switch (collection->objectType) {
   case pkiObjectType_Certificate: 
